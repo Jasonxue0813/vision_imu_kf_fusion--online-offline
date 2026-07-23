@@ -1,0 +1,6 @@
+cam0:
+  camera_model: pinhole
+  distortion_model: equidistant
+  distortion_coeffs: [0.08166043, 0.0780328, -0.06467514, 0.01782885]
+  intrinsics: [234.71440107, 234.94554565, 397.15907943, 264.17771921]
+  resolution: [752, 480]
