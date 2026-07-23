@@ -1,0 +1,37 @@
+%YAML:1.0
+
+model:
+  ## ONNX 模型路径
+  superpoint: ../third/superpoint.onnx
+  lightglue: ../third/lightglue_sim.onnx
+
+feature:
+  ## 特征提取
+  method: superpoint
+  max_features: 1000
+  fast_threshold: 20
+  fast_nonmax: 1
+
+matching:
+  ## 特征匹配
+  method: lightglue
+  distance: auto
+  ratio: 0.80
+  cross_check: 0
+  max_keep: 3000
+
+geo:
+  ## DEM 配置
+  dem_nodata: -9999.0
+
+runtime:
+  ## 运行时参数
+  H: 480
+  W: 752
+  mscore_thresh: 0.1
+  min_kpt_dist: 0.0
+  max_draw: 1000
+  homography_ransac_reproj: 5.0
+  homography_max_pairs: 1000
+  try_cuda: 1
+  device_id: 0

@@ -1,0 +1,218 @@
+%YAML:1.0
+
+input:
+  ## 运行模式: offline (离线读包) / online (在线订阅话题) / auto (自动判断)
+  mode: offline
+  ## 离线运行模式下的 rosbag 数据包路径
+  bag_path: /home/jasonxue/splg_lo_origin/18402.bag
+  ## 相机内参配置文件路径 (焦距、光心、畸变参数)
+  cam_yaml: ../test/cam0.yaml
+  ## 相机与机身的安装外参文件路径 (旋转和平移矩阵)
+  calib_txt: ../cyperst.txt
+  ## 卫星正射影像底图路径 (TIF格式)，用于截取匹配参考图
+  map_tif: ../data/17.tif
+  ## 数字高程模型底图路径 (TIF格式)，用于地形起伏补偿
+  dem_tif: ../data/18ele.tif
+  ## 所有输出结果和中间文件的根目录
+  out_dir: ../result
+
+topics:
+  ## 无人机下视相机的 ROS 话题名称
+  image_topic: /cam0/image_raw
+  ## 飞控或 GNSS 模块发布的经纬高坐标 ROS 话题名称
+  fix_topic: /fix
+  ## 飞控或外部传感器发布的 IMU 数据 ROS 话题名称
+  imu_topic: /imu0
+  ## 相机名称，通常与内参文件内部的节点名对应
+  camera_name: cam0
+
+tuning:
+  ## 【采样与输出控制】
+  ## 兼容保留字段，当前代码已不再按固定时间抽帧；视觉模块始终按“异步单帧串行，解算期间直接丢弃新图像”运行
+  match_interval_sec: 1.0
+  ## 兼容保留字段，当前代码已不再按固定帧号抽帧；该值不再影响视觉定位与视觉-IMU 融合
+  sample_every_n_frames: 2
+  ## 限制最多处理多少帧图像就停止 (0 表示不限制，处理完所有数据)
+  max_output_frames: 0
+  ## 从第几帧开始处理图像 (跳过前面的帧)
+  start_image_index: 1
+  ## 处理到第几帧结束 (0 表示一直处理到末尾)
+  end_image_index: 0
+  ## 是否在硬盘保存图像裁片、匹配图等中间调试文件 (1为保存，0为不保存。0可极大提升运行速度并节省硬盘)
+  persist_frame_artifacts: 0
+  ## 是否启用 sp_lg 深度学习视觉匹配模块 (1为开启视觉融合，0为关闭只跑纯惯导)
+  enable_sp_lg: 1
+
+  ## 【外部可执行程序与输出路径】
+  ## 传递给 sp_lg 视觉匹配子程序的配置文件名
+  sp_lg_template_yaml: config.yaml
+  ## sp_lg 视觉匹配子程序的可执行文件路径
+  sp_lg_executable: ../build/sp_lg
+  ## 单帧纯视觉解算出来的绝对位置输出文件路径
+  localization_csv: ../result/vision_position.csv
+  ## sp_lg 匹配算法内部的详细统计和调试信息输出文件路径
+  sp_lg_result_csv: ../result/sp_lg_result.csv
+  ## 主融合定位结果输出文件路径 (频率与 GNSS 频率一致，最适合作为最终参考)
+  fix_fusion_csv: ../result/fusion_position.csv
+  ## 从最近视觉锚点经 IMU 积分得到的定位结果输出文件路径
+  imu_position_csv: ../result/imu_position.csv
+  ## 提取出的原始 GNSS 轨迹输出文件路径 (作为对比真值)
+  gnss_position_csv: ../result/gnss_position.csv
+  ## 记录被抽样做视觉匹配的那些帧的带时间戳地理信息
+  sampled_geo_csv: ../result/sampled_frame_geo.csv
+  ## 高频连续滤波器的融合轨迹输出文件路径 (固定 50ms 输出一次精简状态)
+  high_rate_fusion_csv: ../result/continuous_fusion.csv
+
+  ## 【IMU 姿态跟踪与积分参数】
+  ## IMU 姿态互补滤波的比例增益 (P)，决定融合加速度计重力向量的速度
+  imu_fusion_kp: 0.8
+  ## IMU 姿态互补滤波的积分增益 (I)，用于消除陀螺仪静态漂移误差
+  imu_fusion_ki: 0.05
+  ## IMU 加速度低通滤波器的 alpha 系数，越小过滤越平滑但延迟越大
+  imu_accel_lpf_alpha: 0.05
+  ## 判断无人机处于悬停/匀速的加速度下限 (m/s^2)，低于此值认为处于稳定状态
+  imu_accel_min_norm_mps2: 8.8
+  ## 判断无人机处于悬停/匀速的加速度上限 (m/s^2)，高于此值可能处于剧烈机动
+  imu_accel_max_norm_mps2: 10.8
+  ## IMU 姿态积分误差的累计限幅，防止异常数据导致姿态跑飞
+  imu_fusion_integral_limit_rad_s: 0.2
+
+  ## 【IMU 加速度零偏估计参数】
+  ## 加速度零偏低通滤波系数
+  imu_bias_lpf_alpha: 0.01
+  ## 允许更新零偏的最大角速度阈值 (rad/s)，只有无人机不怎么转动时才更新
+  imu_bias_gyro_threshold_rad_s: 0.35
+  ## 允许更新零偏的最大加速度残差阈值 (m/s^2)
+  imu_bias_residual_threshold_mps2: 0.50
+  ## 允许估计的加速度零偏绝对值的最大硬限幅 (m/s^2)
+  imu_bias_max_abs_mps2: 0.80
+
+  ## 【IMU 速度传播的阻尼与限幅】(抑制长时间双积分造成的发散)
+  ## 水平方向的速度衰减系数 (每秒衰减比例)，防止无视觉时速度无限制积分变大
+  imu_velocity_damping_per_sec: 0.30
+  ## 垂直方向 (Z轴) 的速度衰减系数
+  imu_vertical_velocity_damping_per_sec: 0.60
+  ## 无人机水平飞行的绝对最大物理速度限制 (m/s)
+  imu_max_speed_mps: 18.0
+  ## 无人机垂直升降的绝对最大物理速度限制 (m/s)
+  imu_max_vertical_speed_mps: 6.0
+
+  ## 【安装外参与坐标补偿】
+  ## 相机相对于机身水平面的横滚安装角偏差 (度)
+  mount_roll_deg: 0.0
+  ## 相机相对于机身水平面的俯仰安装角偏差 (度)
+  mount_pitch_deg: 0.0
+  ## ！！！在 GNSS 航向旋转基础上额外顺时针旋转的角度 (度)，范围 0-360
+  image_rotation_offset_deg_clockwise: 179.0
+  ## GPS 天线相位中心到 IMU 中心的 X 轴 (前向) 物理偏移距离 (米)
+  gps_to_imu_x_m: 0.0
+  ## GPS 天线相位中心到 IMU 中心的 Y 轴 (右向) 物理偏移距离 (米)
+  gps_to_imu_y_m: 0.0
+  ## GPS 天线相位中心到 IMU 中心的 Z 轴 (下向) 物理偏移距离 (米)
+  gps_to_imu_z_m: 0.0
+
+  ## 【GNSS 航向估计与同步窗口】
+  ## 利用历史 GNSS 轨迹拟合当前航向角的时间窗口长度 (秒)
+  window_sec: 1.5
+  ## 输入 GNSS 数据的频率 (Hz)
+  gnss_rate_hz: 10.0
+  ## 内存中保留多少秒的 GNSS 历史轨迹数据
+  heading_history_sec: 7200.0
+  ## 计算航向角的最小水平运动速度阈值 (m/s)。如果飞机速度低于此值，将拒绝进行视觉匹配
+  min_speed_mps: 0.5
+  ## GNSS 轨迹线性拟合的最大允许残差 (米)。轨迹弯曲过大时认为算出的航向不可靠
+  max_residual_m: 3.0
+
+  ## 【图像去畸变与地图裁剪】
+  ## 鱼眼去畸变的平衡系数 (0.0保留全部有效像素，1.0裁剪掉所有黑色无效区域)
+  undistort_balance: 0.0
+  ## 去畸变后的视场角缩放系数 (1.0为原始视场角)
+  undistort_fov_scale: 1.0
+  ## PnP 解算射线求交时的步长 (米)
+  ray_step_m: 20.0
+  ## PnP 射线求交允许的最大距离 (米)，超过认为没有打中地面
+  max_ray_distance_m: 1500.0
+  ## PnP 射线与高程图求交的二分查找迭代次数
+  binary_refine_iters: 18
+  ## 裁图中心相对于飞机当前位置向机头正前方偏移的物理距离 (米)
+  crop_center_offset_forward_m: 0.0
+  ## 裁图中心相对于飞机当前位置向机身右侧偏移的物理距离 (米)
+  crop_center_offset_right_m: 0.0
+  ## 地面参考海拔高度 (米)，用于结合当前图像海拔估计相对地高并做自适应裁图
+  ground_altitude: 420.0
+  ## 用于自适应裁图的无人机图像对角视场角 (度)
+  crop_dfov_deg: 128.1
+  ## 裁图范围放大系数。1.2 表示在理论覆盖范围基础上再放大 20%
+  crop_scale_factor: 1.2
+  ## 以前 5 秒 GPS 高度均值为基准，只有当前 fix 高度超过该基准这么多米后才开启视觉定位与视觉-IMU 融合
+  fusion_open_height: -60.0
+  ## 自适应裁图不可用时的东西方向最小半边长 (米)
+  crop_half_extent_e_m: 300.0
+  ## 自适应裁图不可用时的南北方向最小半边长 (米)
+  crop_half_extent_n_m: 350.0
+
+  ## 【视觉锚点筛选与切换】
+  ## 允许采纳的视觉匹配结果的最低特征点数量，低于此值直接丢弃该帧视觉结果
+  fusion_anchor_min_used_points: 20
+  ## 允许采纳的视觉匹配结果的最低内点率 (Inlier Ratio)
+  fusion_anchor_min_inlier_ratio: 0.78
+  ## PnP 几何解算允许的最大平均重投影误差 (像素)
+  fusion_anchor_max_reproj_error: 4.0
+  ## 决定是否切换新视觉锚点的基础空间距离阈值 (米)
+  fusion_anchor_innovation_base_m: 12.0
+  ## 随飞行速度增加的额外切换距离容忍度系数
+  fusion_anchor_innovation_speed_gain: 4.0
+  ## 新旧视觉锚点平滑过渡 (软更新) 的最小混合权重系数
+  fusion_anchor_soft_update_alpha_min: 0.20
+  ## 新旧视觉锚点平滑过渡 (软更新) 的最大混合权重系数
+  fusion_anchor_soft_update_alpha_max: 0.75
+  ## 视觉锚点最多允许连续使用 IMU 外推的时长 (秒)，超过后抛弃该旧锚点，避免卡死在历史错位
+  fusion_anchor_max_age_sec: 3.0
+  ## 在没有任何视觉结果的情况下，连续滤波器最多只允许纯惯导外推这么久 (秒)，避免长时间无视觉跑飞
+  fusion_imu_only_max_duration_sec: 1.5
+
+  ## 【卡尔曼滤波 (KF) 过程噪声】
+  ## 滤波器预测阶段的速度状态随机游走噪声 (m/s)
+  kf_process_speed_sigma_mps: 2.8
+  ## 滤波器预测阶段的航向角状态随机游走噪声 (度)
+  kf_process_heading_sigma_deg: 15.0
+  ## 滤波器预测阶段的水平位置 (XY) 随机游走噪声系数 (m/sqrt(s))
+  kf_process_xy_rw_sigma_m_sqrt_s: 0.55
+  ## 滤波器预测阶段的垂直位置 (Z) 随机游走噪声系数 (m/sqrt(s))
+  kf_process_z_rw_sigma_m_sqrt_s: 0.80
+
+  ## 【IMU 预积分与断流容错】
+  ## IMU 短时预积分计算位置时的等效加速度噪声标准差 (m/s^2)
+  imu_preintegration_accel_sigma_mps2: 0.8
+  ## 判断 IMU 数据发生大断流 (Gap) 的时间间隔阈值 (秒)。超过此时长未收到数据，会触发重置与重启机制
+  imu_preintegration_max_gap_sec: 0.20
+
+  ## 【视觉量测协方差与卡方门控】
+  ## 视觉位置观测在水平方向 (XY) 的最小可信度标准差底线 (米)
+  kf_visual_min_xy_sigma_m: 3.0
+  ## 视觉位置观测在垂直方向 (Z) 的最小可信度标准差底线 (米)
+  kf_visual_min_z_sigma_m: 4.0
+  ## 是否开启根据匹配质量自适应缩放视觉量测协方差的功能 (1为开，0为关)
+  kf_visual_adaptive_enable: 0
+  ## 自适应缩放的初始乘数系数
+  kf_visual_adaptive_initial_scale: 1.0
+  ## 自适应缩放允许的最小乘数下限
+  kf_visual_adaptive_min_scale: 0.8
+  ## 自适应缩放允许的最大乘数上限 (限制对劣质匹配的惩罚极限)
+  kf_visual_adaptive_max_scale: 3.0
+  ## 自适应协方差更新时的平滑滤波系数 (Alpha)
+  kf_visual_adaptive_alpha: 0.08
+  ## 自适应调节期望收敛到的目标 NIS (归一化新息平方) 值
+  kf_visual_adaptive_target_nis: 3.0
+  ## 卡方检验门控阈值。NIS 超过此值的视觉观测被认为是野值 (Outlier)
+  kf_visual_nis_gate: 16.266
+  ## 是否开启门控拦截。开启后，与滤波器预测状态冲突过大的视觉观测会被直接拒绝，防止状态被硬拉飞
+  kf_visual_reject_on_gate: 1
+
+  ## 【系统运行时 ROS 消息缓冲队列长度】
+  ## 图像消息订阅队列大小
+  image_queue_size: 256
+  ## GNSS 消息订阅队列大小
+  fix_queue_size: 256
+  ## IMU 消息订阅队列大小 (IMU频率高，通常需要较大缓冲)
+  imu_queue_size: 2048
